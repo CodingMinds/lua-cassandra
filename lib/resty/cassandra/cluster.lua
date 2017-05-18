@@ -77,7 +77,7 @@ local function get_peer(self, host, status)
     return nil, 'could not get host details in shm: '..err
   elseif not rec_v then
     return nil, 'no host details for '..host
-  elseif type(rec_v) ~= 'string' or #rec_v ~= rec_peer_size then
+  elseif type(rec_v) ~= 'string' then
     return nil, 'corrupted shm'
   end
 
@@ -87,8 +87,8 @@ local function get_peer(self, host, status)
   end
 
   local peer = json.decode(rec_v)
-  data_center = peer.data_center
-  release_version = peer.release_version
+  local data_center = peer.data_center
+  local release_version = peer.release_version
 
   return {
     up = status,
