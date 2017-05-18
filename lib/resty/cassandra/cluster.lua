@@ -7,12 +7,10 @@
 local resty_lock = require 'resty.lock'
 local cassandra = require 'cassandra'
 local cql = require 'cassandra.cql'
-local ffi = require 'ffi'
+local json = require 'cjson'
 
 local update_time = ngx.update_time
 local cql_errors = cql.errors
-local ffi_cast = ffi.cast
-local ffi_str = ffi.string
 local requests = cql.requests
 local tonumber = tonumber
 local concat = table.concat
@@ -27,7 +25,6 @@ local ERR = ngx.ERR
 local WARN = ngx.WARN
 local DEBUG = ngx.DEBUG
 local NOTICE = ngx.NOTICE
-local C = ffi.C
 
 local empty_t = {}
 local _log_prefix = '[lua-cassandra] '
@@ -35,21 +32,6 @@ local _rec_key = 'host:rec:'
 local _prepared_key = 'prepared:id:'
 local _protocol_version_key = 'protocol:version:'
 local _bind_all_address = '0.0.0.0'
-
-ffi.cdef [[
-    size_t strlen(const char *str);
-
-    struct peer_rec {
-        uint64_t      reconn_delay;
-        uint64_t      unhealthy_at;
-        char         *data_center;
-        char         *release_version;
-    };
-]]
-local str_const = ffi.typeof('char *')
-local rec_peer_const = ffi.typeof('const struct peer_rec*')
-local rec_peer_size = ffi.sizeof('struct peer_rec')
-local rec_peer_cdata = ffi.new('struct peer_rec')
 
 local function get_now()
   return now() * 1000
@@ -71,12 +53,13 @@ local function set_peer(self, host, up, reconn_delay, unhealthy_at,
   end
 
   -- host info
-  rec_peer_cdata.reconn_delay = reconn_delay
-  rec_peer_cdata.unhealthy_at = unhealthy_at
-  rec_peer_cdata.data_center = ffi_cast(str_const, data_center)
-  rec_peer_cdata.release_version = ffi_cast(str_const, release_version)
+  local cdata = {}
+  cdata.reconn_delay = reconn_delay
+  cdata.unhealthy_at = unhealthy_at
+  cdata.data_center = data_center
+  cdata.release_version = release_version
 
-  ok, err = self.shm:safe_set(_rec_key..host, ffi_str(rec_peer_cdata, rec_peer_size))
+  ok, err = self.shm:safe_set(_rec_key..host, json.encode(cdata))
   if not ok then
     return nil, 'could not set host details in shm: '..err
   end
@@ -103,9 +86,9 @@ local function get_peer(self, host, status)
     if err then return nil, 'could not get host status in shm: '..err end
   end
 
-  local peer = ffi_cast(rec_peer_const, rec_v)
-  local data_center = ffi_str(peer.data_center, C.strlen(peer.data_center))
-  local release_version = ffi_str(peer.release_version, C.strlen(peer.release_version))
+  local peer = json.decode(rec_v)
+  data_center = peer.data_center
+  release_version = peer.release_version
 
   return {
     up = status,
